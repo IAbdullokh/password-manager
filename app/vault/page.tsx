@@ -3,21 +3,26 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import CredentialCard from "@/app/components/credential-card";
 import { useVaultStore } from "@/store/vault-store";
 
 export default function VaultPage() {
   const router = useRouter();
-  const {
-    credentials,
-    isLocked,
-    lockVault,
-    deleteCredential,
-    copyPassword,
-    getDecryptedPassword,
-  } = useVaultStore();
+
+  const credentials = useVaultStore((state) => state.credentials);
+  const isLocked = useVaultStore((state) => state.isLocked);
+  const lockVault = useVaultStore((state) => state.lockVault);
+  const deleteCredential = useVaultStore((state) => state.deleteCredential);
+  const copyUsername = useVaultStore((state) => state.copyUsername);
+  const copyPassword = useVaultStore((state) => state.copyPassword);
+  const getReusedCredentialIds = useVaultStore(
+    (state) => state.getReusedCredentialIds
+  );
 
   const [search, setSearch] = useState("");
-  const [decryptedPasswords, setDecryptedPasswords] = useState<string[]>([]);
+  const [selectedTag, setSelectedTag] = useState("all");
+  const [reusedIds, setReusedIds] = useState<string[]>([]);
+  const [copiedMessage, setCopiedMessage] = useState("");
 
   useEffect(() => {
     if (isLocked) {
@@ -26,229 +31,219 @@ export default function VaultPage() {
   }, [isLocked, router]);
 
   useEffect(() => {
-    const loadPasswords = async () => {
+    const loadReusedIds = async () => {
       if (isLocked || credentials.length === 0) {
-        setDecryptedPasswords([]);
+        setReusedIds([]);
         return;
       }
 
       try {
-        const passwords = await Promise.all(
-          credentials.map((item) => getDecryptedPassword(item.encryptedPassword))
-        );
-
-        setDecryptedPasswords(passwords);
+        const ids = await getReusedCredentialIds();
+        setReusedIds(ids);
       } catch (error) {
-        console.error("Failed to load decrypted passwords:", error);
-        setDecryptedPasswords([]);
+        console.error("Failed to load reused credential ids:", error);
+        setReusedIds([]);
       }
     };
 
-    loadPasswords();
-  }, [credentials, getDecryptedPassword, isLocked]);
+    loadReusedIds();
+  }, [credentials, getReusedCredentialIds, isLocked]);
 
-  const reusedIds = useMemo(() => {
-    if (decryptedPasswords.length === 0) return [];
+  useEffect(() => {
+    if (!copiedMessage) return;
 
-    const counts = new Map<string, number>();
+    const timeout = window.setTimeout(() => {
+      setCopiedMessage("");
+    }, 1800);
 
-    decryptedPasswords.forEach((password) => {
-      counts.set(password, (counts.get(password) || 0) + 1);
+    return () => window.clearTimeout(timeout);
+  }, [copiedMessage]);
+
+  const allTags = useMemo(() => {
+    const tags = new Set<string>();
+
+    credentials.forEach((credential) => {
+      credential.tags.forEach((tag) => tags.add(tag));
     });
 
-    return credentials
-      .filter((item, index) => {
-        const password = decryptedPasswords[index];
-        return password && (counts.get(password) || 0) > 1;
-      })
-      .map((item) => item.id);
-  }, [credentials, decryptedPasswords]);
+    return ["all", ...Array.from(tags).sort((a, b) => a.localeCompare(b))];
+  }, [credentials]);
 
   const filteredCredentials = useMemo(() => {
     const q = search.toLowerCase().trim();
 
-    if (!q) return credentials;
-
     return credentials.filter((item) => {
-      return (
+      const matchesSearch =
+        !q ||
         item.serviceName.toLowerCase().includes(q) ||
         item.username.toLowerCase().includes(q) ||
         item.url.toLowerCase().includes(q) ||
-        item.tags.some((tag) => tag.toLowerCase().includes(q))
-      );
-    });
-  }, [credentials, search]);
+        item.notes?.toLowerCase().includes(q) ||
+        item.tags.some((tag) => tag.toLowerCase().includes(q));
 
-  const copyText = async (value: string) => {
+      const matchesTag =
+        selectedTag === "all" || item.tags.includes(selectedTag);
+
+      return matchesSearch && matchesTag;
+    });
+  }, [credentials, search, selectedTag]);
+
+  const handleCopyUsername = async (username: string) => {
     try {
-      await navigator.clipboard.writeText(value);
-      alert("Copied");
-    } catch {
-      alert("Copy failed");
+      await copyUsername(username);
+      setCopiedMessage("Username copied");
+    } catch (error) {
+      console.error("Copy username failed:", error);
+      setCopiedMessage("Failed to copy username");
     }
   };
 
   const handleCopyPassword = async (encryptedPassword: string) => {
     try {
       await copyPassword(encryptedPassword);
-      alert("Password copied");
-    } catch (err) {
-      console.error("Copy password error:", err);
-      alert("Failed to copy password");
+      setCopiedMessage("Password copied");
+    } catch (error) {
+      console.error("Copy password failed:", error);
+      setCopiedMessage("Failed to copy password");
     }
   };
 
-  const handleDelete = (id: string, serviceName: string) => {
+  const handleDelete = async (id: string, serviceName: string) => {
     const confirmed = window.confirm(
       `Delete "${serviceName}"? This action cannot be undone.`
     );
 
-    if (confirmed) {
-      deleteCredential(id);
+    if (!confirmed) return;
+
+    try {
+      await deleteCredential(id);
+    } catch (error) {
+      console.error("Delete credential failed:", error);
     }
   };
 
+  if (isLocked) {
+    return null;
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 p-8 text-white">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-8 flex items-center justify-between gap-4">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-semibold">Vault</h1>
             <p className="mt-2 text-slate-400">
-              Manage your saved credentials securely.
+              Manage shared company credentials in one secure place.
             </p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Link
               href="/vault/new"
-              className="rounded-xl bg-cyan-500 px-5 py-3 font-medium text-slate-950"
+              className="rounded-xl bg-cyan-500 px-5 py-3 font-medium text-slate-950 transition hover:bg-cyan-400"
             >
               Add Credential
             </Link>
 
             <Link
               href="/settings"
-              className="rounded-xl border border-slate-700 px-5 py-3"
+              className="rounded-xl border border-slate-700 px-5 py-3 transition hover:bg-slate-900"
             >
-              Manage Vault
+              Settings
             </Link>
 
             <button
+              type="button"
               onClick={lockVault}
-              className="rounded-xl border border-slate-700 px-5 py-3"
+              className="rounded-xl border border-slate-700 px-5 py-3 transition hover:bg-slate-900"
             >
-              Lock
+              Lock Vault
             </button>
           </div>
         </div>
+
+        {copiedMessage && (
+          <div className="mb-4 rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-200">
+            {copiedMessage}
+          </div>
+        )}
 
         {reusedIds.length > 0 && (
           <div className="mb-6 rounded-2xl border border-yellow-700 bg-yellow-500/10 p-4 text-yellow-200">
             <p className="font-semibold">Password reuse warning</p>
             <p className="mt-1 text-sm text-yellow-100/80">
               Some passwords are used in multiple credentials. Reused passwords
-              make the vault less secure.
+              increase security risk across your team accounts.
             </p>
           </div>
         )}
 
-        <div className="mb-6">
+        <div className="mb-6 grid gap-4 md:grid-cols-[2fr_1fr]">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by service, username, URL, or tag"
-            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 outline-none focus:border-cyan-500"
+            placeholder="Search by service, username, URL, note, or tag"
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 outline-none transition focus:border-cyan-500"
           />
+
+          <select
+            value={selectedTag}
+            onChange={(e) => setSelectedTag(e.target.value)}
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 outline-none transition focus:border-cyan-500"
+          >
+            {allTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag === "all" ? "All tags" : tag}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {filteredCredentials.length === 0 ? (
+        {credentials.length === 0 ? (
+          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10">
+            <h2 className="text-2xl font-semibold text-white">Your vault is empty</h2>
+            <p className="mt-3 max-w-2xl text-slate-400">
+              Start by adding your first company credential. You can organize
+              entries with tags, copy usernames and passwords instantly, and
+              spot reused passwords across the vault.
+            </p>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/vault/new"
+                className="rounded-xl bg-cyan-500 px-5 py-3 font-medium text-slate-950 transition hover:bg-cyan-400"
+              >
+                Add your first credential
+              </Link>
+
+              <Link
+                href="/settings"
+                className="rounded-xl border border-slate-700 px-5 py-3 transition hover:bg-slate-950"
+              >
+                Open settings
+              </Link>
+            </div>
+          </div>
+        ) : filteredCredentials.length === 0 ? (
           <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-slate-400">
-            No credentials found.
+            No credentials match your current search or filter.
           </div>
         ) : (
           <div className="grid gap-4">
-            {filteredCredentials.map((item) => {
-              const isReused = reusedIds.includes(item.id);
-
-              return (
-                <div
-                  key={item.id}
-                  className="rounded-2xl border border-slate-800 bg-slate-900 p-6"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-3">
-                        <h2 className="text-xl font-semibold">
-                          {item.serviceName}
-                        </h2>
-
-                        {isReused && (
-                          <span className="rounded-full border border-yellow-700 bg-yellow-500/10 px-3 py-1 text-xs text-yellow-300">
-                            Reused password
-                          </span>
-                        )}
-                      </div>
-
-                      {item.url && (
-                        <p className="mt-1 text-sm text-slate-400">{item.url}</p>
-                      )}
-
-                      <p className="mt-3 text-sm text-slate-300">
-                        Username: {item.username}
-                      </p>
-
-                      {item.notes && (
-                        <p className="mt-3 text-sm text-slate-400">{item.notes}</p>
-                      )}
-
-                      {item.tags.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {item.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <button
-                        onClick={() => copyText(item.username)}
-                        className="rounded-lg border border-slate-700 px-4 py-2 text-sm"
-                      >
-                        Copy Username
-                      </button>
-
-                      <button
-                        onClick={() => handleCopyPassword(item.encryptedPassword)}
-                        className="rounded-lg border border-slate-700 px-4 py-2 text-sm"
-                      >
-                        Copy Password
-                      </button>
-
-                      <Link
-                        href={`/vault/edit/${item.id}`}
-                        className="rounded-lg border border-cyan-700 px-4 py-2 text-center text-sm text-cyan-300"
-                      >
-                        Edit
-                      </Link>
-
-                      <button
-                        onClick={() => handleDelete(item.id, item.serviceName)}
-                        className="rounded-lg border border-red-800 px-4 py-2 text-sm text-red-400"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {filteredCredentials.map((item) => (
+              <CredentialCard
+                key={item.id}
+                id={item.id}
+                serviceName={item.serviceName}
+                url={item.url}
+                username={item.username}
+                tags={item.tags}
+                reused={reusedIds.includes(item.id)}
+                onCopyUsername={() => handleCopyUsername(item.username)}
+                onCopyPassword={() => handleCopyPassword(item.encryptedPassword)}
+                onDelete={() => handleDelete(item.id, item.serviceName)}
+              />
+            ))}
           </div>
         )}
       </div>
