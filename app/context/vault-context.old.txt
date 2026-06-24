@@ -1,0 +1,215 @@
+"use client";
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  ReactNode,
+} from "react";
+import { Credential } from "@/types";
+
+import {
+  addCredentialToStorage,
+  deleteCredentialFromStorage,
+  getMasterPasswordRecord,
+  getVaultData,
+  hasMasterPassword,
+  saveMasterPasswordRecord,
+  updateCredentialInStorage,
+} from "@/lib/storage";
+import {
+  decryptText,
+  deriveEncryptionKey,
+  encryptText,
+  generateSalt,
+  hashMasterPassword,
+} from "@/lib/crypto";
+import { generateId } from "@/lib/utils";
+
+type CreateCredentialInput = {
+  serviceName: string;
+  url: string;
+  username: string;
+  password: string;
+  notes?: string;
+  tags: string[];
+};
+
+type VaultContextType = {
+  isLocked: boolean;
+  hasPassword: boolean;
+  credentials: Credential[];
+  encryptionKey: CryptoKey | null;
+  initializeVault: (password: string) => Promise<{ success: boolean; error?: string }>;
+  unlockVault: (password: string) => Promise<{ success: boolean; error?: string }>;
+  lockVault: () => void;
+  addCredential: (input: CreateCredentialInput) => Promise<void>;
+  updateCredential: (id: string, input: CreateCredentialInput) => Promise<void>;
+  deleteCredential: (id: string) => void;
+  copyUsername: (username: string) => Promise<void>;
+  copyPassword: (encryptedPassword: string) => Promise<void>;
+  decryptCredentialPassword: (encryptedPassword: string) => Promise<string>;
+};
+
+const VaultContext = createContext<VaultContextType | null>(null);
+
+export function VaultProvider({ children }: { children: ReactNode }) {
+  const [isLocked, setIsLocked] = useState(true);
+  const [hasPassword, setHasPassword] = useState(false);
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [encryptionKey, setEncryptionKey] = useState<CryptoKey | null>(null);
+
+  useEffect(() => {
+    setHasPassword(hasMasterPassword());
+    const vault = getVaultData();
+    setCredentials(vault.credentials);
+    setIsLocked(true);
+  }, []);
+
+  const initializeVault = async (password: string) => {
+    try {
+      const salt = generateSalt();
+      const hash = await hashMasterPassword(password, salt);
+      const key = await deriveEncryptionKey(password, salt);
+
+      saveMasterPasswordRecord({ hash, salt });
+      setEncryptionKey(key);
+      setHasPassword(true);
+      setIsLocked(false);
+
+      return { success: true };
+    } catch {
+      return { success: false, error: "Failed to create vault." };
+    }
+  };
+
+  const unlockVault = async (password: string) => {
+    const record = getMasterPasswordRecord();
+
+    if (!record) {
+      return { success: false, error: "No master password found." };
+    }
+
+    try {
+      const hash = await hashMasterPassword(password, record.salt);
+
+      if (hash !== record.hash) {
+        return { success: false, error: "Incorrect master password." };
+      }
+
+      const key = await deriveEncryptionKey(password, record.salt);
+      const vault = getVaultData();
+
+      setEncryptionKey(key);
+      setCredentials(vault.credentials);
+      setIsLocked(false);
+
+      return { success: true };
+    } catch {
+      return { success: false, error: "Failed to unlock vault." };
+    }
+  };
+
+  const lockVault = () => {
+    setEncryptionKey(null);
+    setIsLocked(true);
+  };
+
+  const addCredential = async (input: CreateCredentialInput) => {
+    if (!encryptionKey) return;
+
+    const encryptedPassword = await encryptText(input.password, encryptionKey);
+
+    const credential: Credential = {
+      id: generateId(),
+      serviceName: input.serviceName,
+      url: input.url,
+      username: input.username,
+      encryptedPassword,
+      notes: input.notes || "",
+      tags: input.tags,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    addCredentialToStorage(credential);
+    setCredentials((prev) => [...prev, credential]);
+  };
+
+  const updateCredential = async (id: string, input: CreateCredentialInput) => {
+    if (!encryptionKey) return;
+
+    const encryptedPassword = await encryptText(input.password, encryptionKey);
+
+    const updated: Credential = {
+      id,
+      serviceName: input.serviceName,
+      url: input.url,
+      username: input.username,
+      encryptedPassword,
+      notes: input.notes || "",
+      tags: input.tags,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    updateCredentialInStorage(updated);
+    setCredentials((prev) =>
+      prev.map((credential) => (credential.id === id ? updated : credential))
+    );
+  };
+
+  const deleteCredential = (id: string) => {
+    deleteCredentialFromStorage(id);
+    setCredentials((prev) => prev.filter((credential) => credential.id !== id));
+  };
+
+  const copyUsername = async (username: string) => {
+    await navigator.clipboard.writeText(username);
+  };
+
+  const copyPassword = async (encryptedPassword: string) => {
+    if (!encryptionKey) return;
+    const plainPassword = await decryptText(encryptedPassword, encryptionKey);
+    await navigator.clipboard.writeText(plainPassword);
+  };
+
+  const decryptCredentialPassword = async (encryptedPassword: string) => {
+    if (!encryptionKey) return "";
+    return decryptText(encryptedPassword, encryptionKey);
+  };
+
+  const value = useMemo(
+    () => ({
+      isLocked,
+      hasPassword,
+      credentials,
+      encryptionKey,
+      initializeVault,
+      unlockVault,
+      lockVault,
+      addCredential,
+      updateCredential,
+      deleteCredential,
+      copyUsername,
+      copyPassword,
+      decryptCredentialPassword,
+    }),
+    [isLocked, hasPassword, credentials, encryptionKey]
+  );
+
+  return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;
+}
+
+export function useVault() {
+  const context = useContext(VaultContext);
+
+  if (!context) {
+    throw new Error("useVault must be used within VaultProvider");
+  }
+
+  return context;
+}
+a

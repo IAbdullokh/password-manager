@@ -1,0 +1,14 @@
+updateCredential: (
+  id: string,
+  updates: {
+    serviceName: string;
+    url: string;
+    username: string;
+    password: string;
+    notes?: string;
+    tags: string[];
+  }
+) => Promise<void>;
+
+getDecryptedPassword: (encryptedPassword: string) => Promise<string>;
+getAllDecryptedPasswords: () => Promise<string[]>;
