@@ -163,7 +163,6 @@ function FAQItem({
 export default function LockScreen({ mode }: Props) {
   const createMasterPassword = useVaultStore((s) => s.createMasterPassword);
   const unlockVault = useVaultStore((s) => s.unlockVault);
-  const resetVault = useVaultStore((s) => s.resetVault);
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -381,7 +380,7 @@ export default function LockScreen({ mode }: Props) {
                 }}
               >
                 {mode === "unlock"
-                  ? "Enter the master password to decrypt this device&apos;s vault."
+                  ? "Enter the master password to decrypt this device's vault."
                   : "Create a master password to encrypt everything stored on this device."}
               </p>
 
@@ -486,8 +485,9 @@ export default function LockScreen({ mode }: Props) {
                       >
                         Confirm password
                       </label>
+
                       <input
-                        type={show ? "text" : "password"}
+                        type="password"
                         className="field"
                         value={confirm}
                         onChange={(e) => setConfirm(e.target.value)}
@@ -499,12 +499,13 @@ export default function LockScreen({ mode }: Props) {
                 {error && (
                   <div
                     style={{
-                      marginBottom: 16,
-                      color: "#ffb3b3",
-                      background: "rgba(227, 93, 93, 0.12)",
-                      border: "1px solid rgba(227, 93, 93, 0.22)",
+                      marginBottom: 14,
                       borderRadius: 16,
+                      border: "1px solid rgba(227, 93, 93, 0.24)",
+                      background: "rgba(227, 93, 93, 0.10)",
+                      color: "#ffb7b7",
                       padding: "12px 14px",
+                      fontSize: 14,
                     }}
                   >
                     {error}
@@ -514,142 +515,49 @@ export default function LockScreen({ mode }: Props) {
                 <button
                   type="submit"
                   className="gold-button"
-                  style={{ width: "100%", minHeight: 52 }}
+                  style={{ width: "100%", marginTop: 4 }}
                   disabled={busy}
                 >
-                  {busy ? "Please wait..." : mode === "unlock" ? "Unlock" : "Create vault"}
+                  {busy
+                    ? mode === "unlock"
+                      ? "Unlocking..."
+                      : "Creating..."
+                    : mode === "unlock"
+                    ? "Unlock"
+                    : "Create vault"}
                 </button>
-
-                {mode === "unlock" && (
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    style={{ width: "100%", marginTop: 14 }}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "Resetting the vault will permanently remove all local data on this device. Continue?"
-                        )
-                      ) {
-                        resetVault();
-                      }
-                    }}
-                  >
-                    Forgot password - reset vault
-                  </button>
-                )}
               </form>
             </div>
-          </div>
-        </section>
 
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns: "0.95fr 1.05fr",
-            gap: 40,
-            alignItems: "start",
-            marginTop: 72,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                color: "var(--accent)",
-                fontSize: 13,
-                letterSpacing: "0.22em",
-                textTransform: "uppercase",
-                fontWeight: 700,
-                marginBottom: 12,
-              }}
-            >
-              Built for trust
-            </div>
-
-            <h2
-              style={{
-                fontSize: 58,
-                lineHeight: 1.02,
-                marginBottom: 20,
-                maxWidth: 540,
-              }}
-            >
-              Security that&apos;s <span style={{ color: "var(--accent)" }}>verifiable</span>, not promised.
-            </h2>
-
-            <p
-              style={{
-                color: "var(--text-secondary)",
-                fontSize: 18,
-                lineHeight: 1.6,
-                maxWidth: 540,
-                marginBottom: 24,
-              }}
-            >
-              Open the DevTools Network tab while you use Aegis. You&apos;ll see your
-              credentials never leave your browser. The only outbound request is
-              an anonymized 5-character hash prefix to HaveIBeenPwned for breach
-              checks.
-            </p>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-                maxWidth: 540,
-              }}
-            >
-              {["Offline-first", "Zero-knowledge", "Inspectable", "No telemetry"].map(
-                (item) => (
-                  <div key={item} className="pill" style={{ minHeight: 42 }}>
-                    <span style={{ color: "var(--accent)" }}>✦</span>
-                    {item}
-                  </div>
-                )
-              )}
+            <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
+              {[
+                {
+                  title: "How is my data protected?",
+                  content:
+                    "All credential passwords are encrypted locally in your browser before they are stored on this device. Your master password is never sent to a server.",
+                },
+                {
+                  title: "Can I recover a forgotten password?",
+                  content:
+                    "No built-in recovery exists. This is intentional for security. Keep your master password safe and use encrypted backups.",
+                },
+                {
+                  title: "Does this app store data online?",
+                  content:
+                    "No. Your vault works locally on this device unless you manually export and move a backup yourself.",
+                },
+              ].map((item, idx) => (
+                <FAQItem
+                  key={item.title}
+                  title={item.title}
+                  content={item.content}
+                  open={faqOpen === idx}
+                  onToggle={() => setFaqOpen((prev) => (prev === idx ? -1 : idx))}
+                />
+              ))}
             </div>
           </div>
-
-          <div style={{ display: "grid", gap: 12 }}>
-            <FAQItem
-              title="Where is my data stored?"
-              content="Entirely in your browser's localStorage, encrypted with a key derived from your master password. Nothing is uploaded anywhere - not to us, not to a cloud, not to a server."
-              open={faqOpen === 0}
-              onToggle={() => setFaqOpen(faqOpen === 0 ? -1 : 0)}
-            />
-            <FAQItem
-              title="How does the breach check stay private?"
-              content="Use the HaveIBeenPwned k-anonymity API approach: SHA-1 hash the password locally, send only the first 5 characters of the hash, and compare matches in-browser. Your password - and even its full hash - never leaves your device."
-              open={faqOpen === 1}
-              onToggle={() => setFaqOpen(faqOpen === 1 ? -1 : 1)}
-            />
-            <FAQItem
-              title="What if I forget my master password?"
-              content="There is no recovery, by design. A backdoor for you is a backdoor for everyone. Export an encrypted backup regularly and store the master password in a memorable phrase."
-              open={faqOpen === 2}
-              onToggle={() => setFaqOpen(faqOpen === 2 ? -1 : 2)}
-            />
-            <FAQItem
-              title="How do I move my vault to another device?"
-              content="Use the encrypted Export button to download an .aegis file. Open Aegis on the new device and use Import - your master password decrypts it back."
-              open={faqOpen === 3}
-              onToggle={() => setFaqOpen(faqOpen === 3 ? -1 : 3)}
-            />
-          </div>
         </section>
-
-        <div
-          style={{
-            marginTop: 34,
-            textAlign: "center",
-            color: "var(--text-secondary)",
-            fontSize: 16,
-          }}
-        >
-          Everything is encrypted and stored locally on this device. Forget the
-          master password and the vault cannot be recovered - that&apos;s the point.
-        </div>
       </div>
     </main>
   );

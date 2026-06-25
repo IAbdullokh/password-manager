@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useVaultStore, CredentialFormInput } from "@/store/vault-store";
 import { Credential, CredentialCategory } from "@/types";
@@ -55,11 +56,30 @@ function IconButton({
   children,
   onClick,
   title,
+  href,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   title?: string;
+  href?: string;
 }) {
+  if (href) {
+    return (
+      <Link
+        href={href}
+        title={title}
+        className="ghost-button"
+        style={{
+          width: 46,
+          minWidth: 46,
+          padding: 0,
+        }}
+      >
+        {children}
+      </Link>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -142,7 +162,6 @@ function StatCard({
     </div>
   );
 }
-
 function CredentialModal({
   open,
   onClose,
@@ -155,6 +174,8 @@ function CredentialModal({
   const [showPw, setShowPw] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [tagsInput, setTagsInput] = useState("");
+
   const [form, setForm] = useState<CredentialFormInput>({
     serviceName: "",
     url: "",
@@ -177,7 +198,9 @@ function CredentialModal({
       category: "Internal",
       favorite: false,
     });
+    setTagsInput("");
     setShowPw(false);
+    setBusy(false);
   };
 
   const strength = strengthMeta(getPasswordStrength(form.password));
@@ -394,7 +417,9 @@ function CredentialModal({
                 className="field"
                 placeholder="https://"
                 value={form.url}
-                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, url: e.target.value }))
+                }
               />
             </div>
 
@@ -407,6 +432,25 @@ function CredentialModal({
                   setForm((f) => ({ ...f, notes: e.target.value }))
                 }
               />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Custom tags</label>
+              <input
+                className="field"
+                placeholder="e.g. work, admin, important"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+              />
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                }}
+              >
+                Separate tags with commas.
+              </div>
             </div>
 
             <label
@@ -464,7 +508,13 @@ function CredentialModal({
 
                 try {
                   setBusy(true);
-                  await onSave(form);
+                  await onSave({
+                    ...form,
+                    tags: tagsInput
+                      .split(",")
+                      .map((tag) => tag.trim())
+                      .filter(Boolean),
+                  });
                   resetForm();
                   onClose();
                 } finally {
@@ -599,6 +649,151 @@ function AuditModal({
     </div>
   );
 }
+
+function DeleteCredentialModal({
+  open,
+  serviceName,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  serviceName: string;
+  onClose: () => void;
+  onConfirm: (password: string) => Promise<boolean>;
+}) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleClose = () => {
+    setPassword("");
+    setBusy(false);
+    setError("");
+    onClose();
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="modal-overlay" onClick={handleClose}>
+      <div
+        className="modal-card"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 520, padding: 24 }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <h2 style={{ fontSize: 22, margin: 0 }}>Delete credential</h2>
+
+          <button
+            type="button"
+            onClick={handleClose}
+            style={{ color: "var(--text-secondary)", cursor: "pointer" }}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M18 6L6 18" />
+              <path d="M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <p
+          style={{
+            color: "var(--text-secondary)",
+            lineHeight: 1.7,
+            marginBottom: 18,
+          }}
+        >
+          You are about to permanently delete <strong>{serviceName}</strong>.
+          Enter your vault password to confirm this action.
+        </p>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Vault password</label>
+          <input
+            type="password"
+            className="field"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoFocus
+          />
+        </div>
+
+        {error && (
+          <div
+            style={{
+              marginBottom: 14,
+              borderRadius: 16,
+              border: "1px solid rgba(227, 93, 93, 0.24)",
+              background: "rgba(227, 93, 93, 0.10)",
+              color: "#ffb7b7",
+              padding: "12px 14px",
+              fontSize: 14,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={handleClose}
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            className="gold-button"
+            style={{
+              background: "linear-gradient(180deg, #dd6b6b, #c84f4f)",
+              color: "#fff7f7",
+              boxShadow: "0 10px 30px rgba(200,79,79,0.18)",
+            }}
+            disabled={busy || !password.trim()}
+            onClick={async () => {
+              try {
+                setBusy(true);
+                setError("");
+
+                const ok = await onConfirm(password);
+
+                if (!ok) {
+                  setError("Incorrect vault password.");
+                  setBusy(false);
+                  return;
+                }
+
+                handleClose();
+              } catch {
+                setError("Failed to delete credential.");
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function CredentialRow({
   item,
@@ -827,7 +1022,6 @@ export default function VaultPage() {
   const addCredential = useVaultStore((s) => s.addCredential);
   const deleteCredential = useVaultStore((s) => s.deleteCredential);
   const lockVault = useVaultStore((s) => s.lockVault);
-  const resetVault = useVaultStore((s) => s.resetVault);
   const toggleFavorite = useVaultStore((s) => s.toggleFavorite);
   const getAllDecryptedPasswords = useVaultStore(
     (s) => s.getAllDecryptedPasswords
@@ -845,6 +1039,7 @@ export default function VaultPage() {
   const [weakCount, setWeakCount] = useState(0);
   const [reusedIds, setReusedIds] = useState<string[]>([]);
   const [breachedCount] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<Credential | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -978,6 +1173,20 @@ export default function VaultPage() {
                 </option>
               ))}
             </select>
+<IconButton title="Settings" href="/settings">
+
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </IconButton>
 
             <IconButton title="Run audit" onClick={() => setShowAudit(true)}>
               <svg
@@ -1009,36 +1218,6 @@ export default function VaultPage() {
                 <path d="M3 12A9 9 0 0 1 18.5 5.6" />
                 <path d="M7 17H5v-2" />
                 <path d="M17 7h2v2" />
-              </svg>
-            </IconButton>
-
-            <IconButton title="Export">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M12 3v12" />
-                <path d="M7 10l5 5 5-5" />
-                <path d="M5 21h14" />
-              </svg>
-            </IconButton>
-
-            <IconButton title="Import">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M12 21V9" />
-                <path d="M17 14l-5-5-5 5" />
-                <path d="M5 3h14" />
               </svg>
             </IconButton>
 
@@ -1295,7 +1474,7 @@ export default function VaultPage() {
                   reused={reusedIds.includes(item.id)}
                   onCopyUsername={() => copyUsername(item.username)}
                   onCopyPassword={() => copyPassword(item.encryptedPassword)}
-                  onDelete={() => deleteCredential(item.id)}
+                  onDelete={() => setDeleteTarget(item)}
                   onToggleFavorite={() => toggleFavorite(item.id)}
                 />
               ))}
@@ -1319,24 +1498,15 @@ export default function VaultPage() {
             ⌘L lock
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Resetting the vault will permanently remove all locally stored credentials. Continue?"
-                )
-              ) {
-                resetVault();
-              }
-            }}
-            style={{
-              color: "var(--text-secondary)",
-              cursor: "pointer",
-            }}
-          >
-            Reset vault
-          </button>
+         <Link
+  href="/settings"
+  style={{
+    color: "var(--text-secondary)",
+  }}
+>
+  Security settings
+</Link>
+
         </div>
       </div>
 
@@ -1367,6 +1537,20 @@ export default function VaultPage() {
         weak={weakCount}
         reused={reusedIds.length}
         breached={breachedCount}
+      />
+
+      <DeleteCredentialModal
+        open={!!deleteTarget}
+        serviceName={deleteTarget?.serviceName || ""}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={async (password) => {
+          if (!deleteTarget) return false;
+          const ok = await deleteCredential(deleteTarget.id, password);
+          if (ok) {
+            setDeleteTarget(null);
+          }
+          return ok;
+        }}
       />
     </main>
   );

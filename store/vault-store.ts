@@ -38,8 +38,9 @@ type VaultStore = {
   setLocked: (locked: boolean) => void;
   createMasterPassword: (password: string) => Promise<void>;
   unlockVault: (password: string) => Promise<boolean>;
+  verifyMasterPassword: (password: string) => Promise<boolean>;
   lockVault: () => void;
-  resetVault: () => void;
+  resetVault: (password: string) => Promise<boolean>;
   changeMasterPassword: (
     currentPassword: string,
     nextPassword: string
@@ -47,7 +48,7 @@ type VaultStore = {
 
   addCredential: (credential: AddCredentialInput) => Promise<void>;
   updateCredential: (id: string, updates: CredentialFormInput) => Promise<void>;
-  deleteCredential: (id: string) => Promise<void>;
+  deleteCredential: (id: string, password: string) => Promise<boolean>;
   toggleFavorite: (id: string) => void;
 
   getCredentialById: (id: string) => Credential | undefined;
@@ -177,6 +178,17 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
     return false;
   },
 
+  verifyMasterPassword: async (password) => {
+    const savedHash = getMasterPasswordHash();
+
+    if (!savedHash) {
+      return false;
+    }
+
+    const inputHash = await hashPassword(password);
+    return inputHash === savedHash;
+  },
+
   lockVault: () => {
     set({
       isLocked: true,
@@ -184,7 +196,13 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
     });
   },
 
-  resetVault: () => {
+  resetVault: async (password) => {
+    const isValid = await get().verifyMasterPassword(password);
+
+    if (!isValid) {
+      return false;
+    }
+
     if (typeof window !== "undefined") {
       localStorage.removeItem(CREDENTIALS_KEY);
       localStorage.removeItem(MASTER_PASSWORD_HASH_KEY);
@@ -196,6 +214,8 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
       masterPassword: null,
       hasMasterPassword: false,
     });
+
+    return true;
   },
 
   changeMasterPassword: async (currentPassword, nextPassword) => {
@@ -313,11 +333,19 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
     set({ credentials: updatedCredentials });
   },
 
-  deleteCredential: async (id) => {
+  deleteCredential: async (id, password) => {
+    const isValid = await get().verifyMasterPassword(password);
+
+    if (!isValid) {
+      return false;
+    }
+
     const updatedCredentials = get().credentials.filter((item) => item.id !== id);
 
     saveCredentials(updatedCredentials);
     set({ credentials: updatedCredentials });
+
+    return true;
   },
 
   toggleFavorite: (id) => {
