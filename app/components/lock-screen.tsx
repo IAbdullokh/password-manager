@@ -3,236 +3,654 @@
 import { useMemo, useState } from "react";
 import { useVaultStore } from "@/store/vault-store";
 
-type LockScreenProps = {
-  mode: "setup" | "unlock";
-};
+type Props = { mode: "setup" | "unlock" };
 
-function getPasswordStrength(password: string): "weak" | "fair" | "strong" {
-  let score = 0;
-
-  if (password.length >= 8) score += 1;
-  if (password.length >= 12) score += 1;
-  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
-  if (/\d/.test(password)) score += 1;
-  if (/[^A-Za-z0-9]/.test(password)) score += 1;
-
-  if (score <= 2) return "weak";
-  if (score <= 4) return "fair";
-  return "strong";
+function getStrength(p: string) {
+  if (!p) return { label: "Empty", width: "0%", color: "rgba(255,255,255,0.08)" };
+  let s = 0;
+  if (p.length >= 8) s++;
+  if (p.length >= 12) s++;
+  if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++;
+  if (/\d/.test(p)) s++;
+  if (/[^A-Za-z0-9]/.test(p)) s++;
+  if (s <= 1) return { label: "Weak", width: "25%", color: "var(--danger)" };
+  if (s === 2) return { label: "Fair", width: "50%", color: "var(--warning)" };
+  if (s === 3) return { label: "Good", width: "75%", color: "#1ec487" };
+  return { label: "Excellent", width: "100%", color: "var(--accent)" };
 }
 
-function getStrengthUi(strength: "weak" | "fair" | "strong") {
-  if (strength === "weak") {
-    return {
-      label: "Weak",
-      text: "text-red-400",
-      bar: "bg-red-500 w-1/3",
-    };
-  }
+const FEATURES = [
+  { title: "AES-256-GCM", sub: "PBKDF2 - 200k rounds", icon: "lock" },
+  { title: "Breach scanner", sub: "Powered by HaveIBeenPwned", icon: "shield" },
+  { title: "Strong generator", sub: "Crypto-random, 8-48 chars", icon: "key" },
+  { title: "Auto-lock", sub: "Idle timeout, configurable", icon: "clock" },
+  { title: "Encrypted backups", sub: "Portable .aegis files", icon: "file" },
+  { title: "No server", sub: "100% offline-capable", icon: "server" },
+];
 
-  if (strength === "fair") {
-    return {
-      label: "Fair",
-      text: "text-yellow-400",
-      bar: "bg-yellow-500 w-2/3",
-    };
-  }
-
-  return {
-    label: "Strong",
-    text: "text-emerald-400",
-    bar: "bg-emerald-500 w-full",
+function Icon({ type }: { type: string }) {
+  const props = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
   };
+
+  switch (type) {
+    case "lock":
+      return (
+        <svg {...props}>
+          <rect x="5" y="11" width="14" height="9" rx="2" />
+          <path d="M8 11V8a4 4 0 1 1 8 0v3" />
+        </svg>
+      );
+    case "shield":
+      return (
+        <svg {...props}>
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          <path d="M12 8v4" />
+          <circle cx="12" cy="16" r="0.8" fill="currentColor" />
+        </svg>
+      );
+    case "key":
+      return (
+        <svg {...props}>
+          <circle cx="7.5" cy="15.5" r="4.5" />
+          <path d="M10.7 12.3L21 2" />
+          <path d="M18 5h3v3" />
+        </svg>
+      );
+    case "clock":
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 8v5l3 2" />
+        </svg>
+      );
+    case "file":
+      return (
+        <svg {...props}>
+          <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+          <path d="M14 2v5h5" />
+          <path d="M9 13h6" />
+          <path d="M9 17h4" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...props}>
+          <rect x="4" y="6" width="16" height="12" rx="2" />
+          <path d="M8 10h8" />
+        </svg>
+      );
+  }
 }
 
-export default function LockScreen({ mode }: LockScreenProps) {
-  const createMasterPassword = useVaultStore(
-    (state) => state.createMasterPassword
+function FAQItem({
+  title,
+  content,
+  open,
+  onToggle,
+}: {
+  title: string;
+  content: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: 24,
+        border: "1px solid var(--border-default)",
+        background: "rgba(15, 34, 25, 0.72)",
+        overflow: "hidden",
+      }}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          minHeight: 56,
+          padding: "0 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          color: "var(--text-primary)",
+          cursor: "pointer",
+        }}
+      >
+        <span style={{ fontSize: 15, fontWeight: 700, textAlign: "left" }}>
+          {title}
+        </span>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          style={{
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.18s ease",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            padding: "0 20px 18px",
+            color: "var(--text-secondary)",
+            fontSize: 15,
+            lineHeight: 1.7,
+            borderTop: "1px solid var(--border-subtle)",
+          }}
+        >
+          <div style={{ paddingTop: 14 }}>{content}</div>
+        </div>
+      )}
+    </div>
   );
-  const unlockVault = useVaultStore((state) => state.unlockVault);
+}
+
+export default function LockScreen({ mode }: Props) {
+  const createMasterPassword = useVaultStore((s) => s.createMasterPassword);
+  const unlockVault = useVaultStore((s) => s.unlockVault);
+  const resetVault = useVaultStore((s) => s.resetVault);
 
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
+  const [faqOpen, setFaqOpen] = useState(0);
 
-  const isSetup = mode === "setup";
-  const passwordStrength = useMemo(
-    () => getPasswordStrength(password),
-    [password]
-  );
-  const strengthUi = getStrengthUi(passwordStrength);
+  const strength = useMemo(() => getStrength(password), [password]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!password.trim()) {
-      setError("Master password cannot be empty.");
-      return;
-    }
-
-    if (isSetup) {
-      if (password.length < 8) {
-        setError("Master password must be at least 8 characters long.");
-        return;
-      }
-
-      if (password !== confirmPassword) {
-        setError("Passwords do not match.");
-        return;
-      }
-    }
-
     setError("");
-    setLoading(true);
 
     try {
-      if (isSetup) {
-        await createMasterPassword(password);
-      } else {
-        const success = await unlockVault(password);
+      setBusy(true);
 
-        if (!success) {
-          setError("Incorrect master password.");
+      if (mode === "setup") {
+        if (password.length < 8) {
+          setError("Master password must be at least 8 characters.");
           return;
         }
+
+        if (password !== confirm) {
+          setError("Passwords do not match.");
+          return;
+        }
+
+        await createMasterPassword(password);
+        return;
       }
 
-      setPassword("");
-      setConfirmPassword("");
+      const ok = await unlockVault(password);
+
+      if (!ok) {
+        setError("Incorrect master password.");
+      }
     } catch (err) {
-      console.error("Lock screen error:", err);
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError("Something went wrong. Please try again.");
+      console.error(err);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
-      <div className="grid w-full max-w-5xl gap-8 lg:grid-cols-[1.2fr_0.9fr]">
-        <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-8 shadow-2xl">
-          <div className="inline-flex items-center rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
-            Team Vault
+    <main
+      className="page-enter"
+      style={{
+        minHeight: "100vh",
+        padding: "40px 0 28px",
+      }}
+    >
+      <div className="app-shell">
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.1fr 0.9fr",
+            gap: 40,
+            alignItems: "start",
+          }}
+        >
+          <div style={{ paddingTop: 8 }}>
+            <div
+              className="pill"
+              style={{
+                width: "fit-content",
+                marginBottom: 24,
+                color: "var(--text-secondary)",
+              }}
+            >
+              <span style={{ color: "var(--accent)" }}>◌</span>
+              Zero-knowledge · Open architecture
+            </div>
+
+            <div
+              style={{
+                width: 112,
+                height: 136,
+                marginBottom: 10,
+                opacity: 0.95,
+                color: "var(--accent)",
+              }}
+            >
+              <svg
+                viewBox="0 0 120 140"
+                width="100%"
+                height="100%"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  d="M60 8c11 10 27 14 40 15v47c0 31-17 49-40 62C37 119 20 101 20 70V23c13-1 29-5 40-15z"
+                  strokeWidth="2"
+                  opacity="0.9"
+                />
+                <path
+                  d="M60 20c8 7 19 10 29 11v36c0 24-12 38-29 49-17-11-29-25-29-49V31c10-1 21-4 29-11z"
+                  strokeWidth="1.4"
+                  opacity="0.55"
+                />
+                <path d="M38 73c5-5 11-7 17-7 8 0 14 3 20 8" strokeWidth="1.4" opacity="0.45" />
+                <path d="M44 88c9-6 22-6 31 0" strokeWidth="1.2" opacity="0.35" />
+              </svg>
+            </div>
+
+            <h1
+              style={{
+                fontSize: 74,
+                lineHeight: 0.95,
+                maxWidth: 620,
+                marginBottom: 24,
+              }}
+            >
+              <span style={{ color: "var(--text-primary)" }}>The </span>
+              <span style={{ color: "var(--accent)" }}>last password</span>
+              <br />
+              <span style={{ color: "var(--text-primary)" }}>
+                you&apos;ll ever memorize.
+              </span>
+            </h1>
+
+            <p
+              style={{
+                maxWidth: 650,
+                color: "var(--text-secondary)",
+                fontSize: 18,
+                lineHeight: 1.65,
+                marginBottom: 28,
+              }}
+            >
+              Aegis encrypts every credential in your browser with AES-256-GCM
+              before it touches disk. No accounts. No servers. No telemetry.
+              Just one master password between your team and chaos.
+            </p>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 14,
+                maxWidth: 680,
+              }}
+            >
+              {FEATURES.map((feature) => (
+                <div
+                  key={feature.title}
+                  className="soft-card"
+                  style={{
+                    minHeight: 84,
+                    padding: "18px 20px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ color: "var(--text-primary)" }}>
+                    <Icon type={feature.icon} />
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        color: "var(--text-primary)",
+                        fontWeight: 700,
+                        fontSize: 15,
+                        marginBottom: 3,
+                      }}
+                    >
+                      {feature.title}
+                    </div>
+                    <div style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                      {feature.sub}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <h1 className="mt-6 text-4xl font-semibold tracking-tight">
-            Company credentials, protected behind one secure vault.
-          </h1>
+          <div style={{ paddingTop: 76 }}>
+            <div
+              className="section-card"
+              style={{
+                padding: 32,
+              }}
+            >
+              <div
+                style={{
+                  color: "var(--accent)",
+                  fontSize: 13,
+                  letterSpacing: "0.22em",
+                  textTransform: "uppercase",
+                  marginBottom: 10,
+                  fontWeight: 700,
+                }}
+              >
+                {mode === "unlock" ? "Welcome back" : "Create vault"}
+              </div>
 
-          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-400">
-            Store shared logins for internal tools, cloud platforms, social
-            accounts, and project systems in one place. Keep passwords encrypted,
-            copy access quickly, and reduce unsafe sharing across chats and notes.
-          </p>
+              <h2
+                style={{
+                  fontSize: 34,
+                  lineHeight: 1.1,
+                  marginBottom: 10,
+                }}
+              >
+                {mode === "unlock" ? "Unlock your vault" : "Create your vault"}
+              </h2>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-sm font-medium text-white">Encrypted storage</p>
-              <p className="mt-2 text-sm text-slate-400">
-                Passwords stay protected inside the vault.
+              <p
+                style={{
+                  color: "var(--text-secondary)",
+                  fontSize: 18,
+                  marginBottom: 26,
+                }}
+              >
+                {mode === "unlock"
+                  ? "Enter the master password to decrypt this device&apos;s vault."
+                  : "Create a master password to encrypt everything stored on this device."}
               </p>
-            </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-sm font-medium text-white">Quick access</p>
-              <p className="mt-2 text-sm text-slate-400">
-                Copy usernames and passwords without exposing them on screen.
-              </p>
-            </div>
+              <form onSubmit={handleSubmit}>
+                <div style={{ marginBottom: 18 }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: 10,
+                      color: "var(--text-secondary)",
+                      fontSize: 13,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Master password
+                  </label>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <p className="text-sm font-medium text-white">Team safety</p>
-              <p className="mt-2 text-sm text-slate-400">
-                Spot reused passwords and keep company accounts better secured.
-              </p>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type={show ? "text" : "password"}
+                      className="field"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoFocus
+                      style={{ paddingRight: 56 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShow((v) => !v)}
+                      style={{
+                        position: "absolute",
+                        right: 16,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {mode === "setup" && (
+                  <>
+                    <div style={{ marginBottom: 10 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 6,
+                          marginBottom: 8,
+                        }}
+                      >
+                        {Array.from({ length: 4 }).map((_, i) => {
+                          const widths = ["25%", "50%", "75%", "100%"];
+                          const active =
+                            parseInt(strength.width, 10) >= parseInt(widths[i], 10);
+
+                          return (
+                            <div
+                              key={i}
+                              style={{
+                                height: 6,
+                                flex: 1,
+                                borderRadius: 999,
+                                background: active
+                                  ? strength.color
+                                  : "rgba(255,255,255,0.08)",
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                        Strength: {strength.label}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 18 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          marginBottom: 10,
+                          color: "var(--text-secondary)",
+                          fontSize: 13,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Confirm password
+                      </label>
+                      <input
+                        type={show ? "text" : "password"}
+                        className="field"
+                        value={confirm}
+                        onChange={(e) => setConfirm(e.target.value)}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {error && (
+                  <div
+                    style={{
+                      marginBottom: 16,
+                      color: "#ffb3b3",
+                      background: "rgba(227, 93, 93, 0.12)",
+                      border: "1px solid rgba(227, 93, 93, 0.22)",
+                      borderRadius: 16,
+                      padding: "12px 14px",
+                    }}
+                  >
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="gold-button"
+                  style={{ width: "100%", minHeight: 52 }}
+                  disabled={busy}
+                >
+                  {busy ? "Please wait..." : mode === "unlock" ? "Unlock" : "Create vault"}
+                </button>
+
+                {mode === "unlock" && (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    style={{ width: "100%", marginTop: 14 }}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Resetting the vault will permanently remove all local data on this device. Continue?"
+                        )
+                      ) {
+                        resetVault();
+                      }
+                    }}
+                  >
+                    Forgot password - reset vault
+                  </button>
+                )}
+              </form>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-8 shadow-2xl">
-          <div className="mb-6">
-            <h2 className="text-3xl font-semibold">
-              {isSetup ? "Create your vault" : "Unlock vault"}
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "0.95fr 1.05fr",
+            gap: 40,
+            alignItems: "start",
+            marginTop: 72,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                color: "var(--accent)",
+                fontSize: 13,
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+                fontWeight: 700,
+                marginBottom: 12,
+              }}
+            >
+              Built for trust
+            </div>
+
+            <h2
+              style={{
+                fontSize: 58,
+                lineHeight: 1.02,
+                marginBottom: 20,
+                maxWidth: 540,
+              }}
+            >
+              Security that&apos;s <span style={{ color: "var(--accent)" }}>verifiable</span>, not promised.
             </h2>
 
-            <p className="mt-2 text-sm leading-6 text-slate-400">
-              {isSetup
-                ? "Set a master password to secure the vault before adding company credentials."
-                : "Enter your master password to unlock saved company credentials."}
+            <p
+              style={{
+                color: "var(--text-secondary)",
+                fontSize: 18,
+                lineHeight: 1.6,
+                maxWidth: 540,
+                marginBottom: 24,
+              }}
+            >
+              Open the DevTools Network tab while you use Aegis. You&apos;ll see your
+              credentials never leave your browser. The only outbound request is
+              an anonymized 5-character hash prefix to HaveIBeenPwned for breach
+              checks.
             </p>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+                maxWidth: 540,
+              }}
+            >
+              {["Offline-first", "Zero-knowledge", "Inspectable", "No telemetry"].map(
+                (item) => (
+                  <div key={item} className="pill" style={{ minHeight: 42 }}>
+                    <span style={{ color: "var(--accent)" }}>✦</span>
+                    {item}
+                  </div>
+                )
+              )}
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
-                Master Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white outline-none transition focus:border-sky-500"
-                placeholder={
-                  isSetup ? "Create a strong master password" : "Enter master password"
-                }
-              />
-            </div>
+          <div style={{ display: "grid", gap: 12 }}>
+            <FAQItem
+              title="Where is my data stored?"
+              content="Entirely in your browser's localStorage, encrypted with a key derived from your master password. Nothing is uploaded anywhere - not to us, not to a cloud, not to a server."
+              open={faqOpen === 0}
+              onToggle={() => setFaqOpen(faqOpen === 0 ? -1 : 0)}
+            />
+            <FAQItem
+              title="How does the breach check stay private?"
+              content="Use the HaveIBeenPwned k-anonymity API approach: SHA-1 hash the password locally, send only the first 5 characters of the hash, and compare matches in-browser. Your password - and even its full hash - never leaves your device."
+              open={faqOpen === 1}
+              onToggle={() => setFaqOpen(faqOpen === 1 ? -1 : 1)}
+            />
+            <FAQItem
+              title="What if I forget my master password?"
+              content="There is no recovery, by design. A backdoor for you is a backdoor for everyone. Export an encrypted backup regularly and store the master password in a memorable phrase."
+              open={faqOpen === 2}
+              onToggle={() => setFaqOpen(faqOpen === 2 ? -1 : 2)}
+            />
+            <FAQItem
+              title="How do I move my vault to another device?"
+              content="Use the encrypted Export button to download an .aegis file. Open Aegis on the new device and use Import - your master password decrypts it back."
+              open={faqOpen === 3}
+              onToggle={() => setFaqOpen(faqOpen === 3 ? -1 : 3)}
+            />
+          </div>
+        </section>
 
-            {isSetup && password && (
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm text-slate-400">Strength</span>
-                  <span className={`text-sm font-medium ${strengthUi.text}`}>
-                    {strengthUi.label}
-                  </span>
-                </div>
-
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div className={`h-full rounded-full transition-all ${strengthUi.bar}`} />
-                </div>
-
-                <p className="mt-2 text-xs text-slate-500">
-                  Use at least 8 characters with a mix of uppercase, numbers, and symbols.
-                </p>
-              </div>
-            )}
-
-            {isSetup && (
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-300">
-                  Confirm Password
-                </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white outline-none transition focus:border-sky-500"
-                  placeholder="Confirm master password"
-                />
-              </div>
-            )}
-
-            {error && (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-sky-600 px-4 py-3 font-medium text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading
-                ? "Please wait..."
-                : isSetup
-                ? "Create Password"
-                : "Unlock Vault"}
-            </button>
-          </form>
+        <div
+          style={{
+            marginTop: 34,
+            textAlign: "center",
+            color: "var(--text-secondary)",
+            fontSize: 16,
+          }}
+        >
+          Everything is encrypted and stored locally on this device. Forget the
+          master password and the vault cannot be recovered - that&apos;s the point.
         </div>
       </div>
-    </div>
+    </main>
   );
 }

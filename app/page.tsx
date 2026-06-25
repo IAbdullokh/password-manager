@@ -18,6 +18,7 @@ export default function HomePage() {
   const isLocked = useVaultStore((state) => state.isLocked);
   const hasMasterPassword = useVaultStore((state) => state.hasMasterPassword);
   const lockVault = useVaultStore((state) => state.lockVault);
+  const autoLockMinutes = useVaultStore((state) => state.autoLockMinutes);
 
   const timeoutRef = useRef<number | null>(null);
 
@@ -34,17 +35,14 @@ export default function HomePage() {
       return;
     }
 
-    const timeoutMs = 60 * 1000;
+    const timeoutMs = autoLockMinutes * 60 * 1000;
 
     const resetTimer = () => {
-      console.log("reset timer");
-
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current);
       }
 
       timeoutRef.current = window.setTimeout(() => {
-        console.log("locking vault now");
         lockVault();
       }, timeoutMs);
     };
@@ -65,7 +63,7 @@ export default function HomePage() {
         timeoutRef.current = null;
       }
     };
-  }, [isLocked, hasMasterPassword, lockVault]);
+  }, [isLocked, hasMasterPassword, autoLockMinutes, lockVault]);
 
   if (isLocked) {
     return <LockScreen mode={hasMasterPassword ? "unlock" : "setup"} />;
@@ -73,3 +71,4 @@ export default function HomePage() {
 
   return <VaultPage />;
 }
+  
